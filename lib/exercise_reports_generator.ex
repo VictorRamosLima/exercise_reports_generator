@@ -43,6 +43,45 @@ defmodule ExerciseReportsGenerator do
     |> Enum.reduce(report_acc(), &reduce_values(&1, &2))
   end
 
+  def build_from_many(filenames) when not is_list(filenames) do
+    {:error, "List of strings was not passed"}
+  end
+
+  def build_from_many(filenames) do
+    result =
+      filenames
+      |> Task.async_stream(&build/1)
+      |> Enum.reduce(
+        report_acc(),
+        fn {:ok, result}, report -> reduce_reports(result, report) end
+      )
+
+    {:ok, result}
+  end
+
+  defp reduce_reports(
+    %{
+      all_hours: previous_all_hours,
+      hours_per_month: previous_hours_per_month,
+      hours_per_year: previous_hours_per_year
+    },
+    %{
+      all_hours: current_all_hours,
+      hours_per_month: current_hours_per_month,
+      hours_per_year: current_hours_per_year
+    }
+  ) do
+    all_hours = merge_maps(previous_all_hours, current_all_hours)
+    hours_per_month = mount_map(previous_hours_per_month, current_hours_per_month)
+    hours_per_year = mount_map(previous_hours_per_year, current_hours_per_year)
+
+    %{
+      all_hours: all_hours,
+      hours_per_month: hours_per_month,
+      hours_per_year: hours_per_year
+    }
+  end
+
   defp reduce_values(
     [name, hours, _day, month, year],
     %{
@@ -66,6 +105,28 @@ defmodule ExerciseReportsGenerator do
     |> Map.put(:all_hours, all_hours)
     |> Map.put(:hours_per_month, hours_per_month)
     |> Map.put(:hours_per_year, hours_per_year)
+  end
+
+  defp mount_map(previous_map, current_map) do
+    Enum.reduce(
+      @names,
+      %{},
+      fn name, acc ->
+        Map.put(
+          acc,
+          name,
+          merge_maps(previous_map[name], current_map[name])
+        )
+      end
+    )
+  end
+
+  defp merge_maps(previous_map, current_map) do
+    Map.merge(
+      previous_map,
+      current_map,
+      fn _key, previous_values, current_values -> previous_values + current_values end
+    )
   end
 
   def report_acc do
